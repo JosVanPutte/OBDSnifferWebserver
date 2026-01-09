@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "rootHtml.h"
 #include "configHtml.h"
+#include "testHtml.h"
 
 // ====== CHANGE THESE ======
 const char* ssid     = "vanPutte";
@@ -23,18 +24,20 @@ nvs_handle_t nvs;
 // Web server
 AsyncWebServer server(80);
 
+const size_t capacity = JSON_OBJECT_SIZE(8);
+StaticJsonDocument<capacity> jsonConfig;
+
 void config(AsyncWebServerRequest *request) {
   int pars = request->params();
   Serial.print("GOT HTTP_POST params =");
   Serial.println(pars);
-  JsonDocument j;
   while(--pars >= 0) {
     const AsyncWebParameter *p = request->getParam(pars);
     Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
-    j[p->name().c_str()] = p->value().c_str();
+    jsonConfig[p->name().c_str()] = p->value().c_str();
   }
   String configStr;
-  if (!serializeJson(j, configStr)) {
+  if (!serializeJson(jsonConfig, configStr)) {
     Serial.println("Failed to serialize");
   } else {
     Serial.println(configStr) ;
@@ -43,7 +46,6 @@ void config(AsyncWebServerRequest *request) {
   request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
 }
 
-JsonDocument jsonConfig;
 
 void setup() {
   Serial.begin(115200);
@@ -57,6 +59,7 @@ void setup() {
       Serial.printf("failed to deserialize %s", saved.c_str());
     } else {
       Serial.printf("deserialization OK");
+      Serial.println((const char *)jsonConfig["name"]);
     }
   }
   // Connect Wi-Fi
@@ -79,6 +82,24 @@ void setup() {
   });
   server.on("/configuratie.html", [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", (uint8_t *)configHtml, strlen(configHtml));
+  });
+  server.on("/test.html", [](AsyncWebServerRequest *request) {
+    String testingPage = "/testing.html?label=";
+    testingPage.concat((const char *)jsonConfig["name"]);
+    testingPage.concat("&max=");
+    testingPage.concat((const char *)jsonConfig["max_value"]);
+    Serial.println(testingPage);
+    request->redirect(testingPage);
+  });
+  server.on("/testing.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)testHtml, strlen(testHtml));
   });
   server.on("/config", HTTP_POST, config);
   server.onNotFound([](AsyncWebServerRequest *request) {

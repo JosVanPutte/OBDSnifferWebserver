@@ -1,6 +1,5 @@
 const char *configHtml = R"rawliteral(
 <!DOCTYPE html>
-<html lang="nl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,7 +32,11 @@ const char *configHtml = R"rawliteral(
     <form id="configForm" action="config" method="post">
         <div class="row">
             <div class="form-group" style="flex: 2;">
-                <label id="lbl-code">Code (Hexadecimaal)</label>
+                <label id="lbl-name">Naam</label>
+                <input type="text" id="name" required>
+            </div>
+            <div class="form-group" style="flex: 2;">
+                <label id="lbl-code">Code (Hex)</label>
                 <input type="text" id="code" placeholder="0x1A2B" pattern="^0x[0-9a-fA-F]+$" required>
             </div>
             <div class="form-group" style="flex: 1;">
@@ -84,16 +87,22 @@ const char *configHtml = R"rawliteral(
 </div>
 
 <script>
-    let currentLang = 'nl';
+    currentLang = 'nl';
+    window.onload = function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        currentLang = urlParams.get('lang') || 'nl';
+        setLanguage();
+    }
+
     const translations = {
         nl: {
-            title: "Configuratie", langBtn: "English", code: "Code (Hex)", 
+            title: "Configuratie", langBtn: "English", name: "Naam", code: "Code (Hex)", 
             bytes: "Aantal Bytes", endian: "Endianness", range: "Bereik", 
             max: "Maximale Waarde", factor: "Factor", type: "Visualisatie", 
             save: "Zenden", export: "Exporteer JSON"
         },
         en: {
-            title: "Configuration", langBtn: "Nederlands", code: "Code (Hex)", 
+            title: "Configuration", langBtn: "Nederlands", name: "Name", code: "Code (Hex)", 
             bytes: "Byte Count", endian: "Endianness", range: "Range", 
             max: "Max Value", factor: "Multiplier", type: "Visualization", 
             save: "Send", export: "Export JSON"
@@ -102,10 +111,13 @@ const char *configHtml = R"rawliteral(
 
     function toggleLanguage() {
         currentLang = currentLang === 'nl' ? 'en' : 'nl';
+        setLanguage();
+    }
+    function setLanguage() {
         const t = translations[currentLang];
-
         document.getElementById('title').innerText = t.title;
         document.getElementById('langBtn').innerText = t.langBtn;
+        document.getElementById('lbl-name').innerText = t.name;
         document.getElementById('lbl-code').innerText = t.code;
         document.getElementById('lbl-bytes').innerText = t.bytes;
         document.getElementById('lbl-endian').innerText = t.endian;
@@ -124,6 +136,7 @@ const char *configHtml = R"rawliteral(
    	async function postToServer() {
         try {
             const config = {
+                name: document.getElementById('name').value,
                 hexCode: document.getElementById('code').value,
                 byteCount: parseInt(document.getElementById('bytes').value),
                 endianness: document.getElementById('endian').value,
@@ -133,7 +146,8 @@ const char *configHtml = R"rawliteral(
                 visualization: document.getElementById('viz_type').value
             };
             const response = await fetch('/config'+
-            '?code='+ document.getElementById('code').value +
+            '?name='+ document.getElementById('name').value +
+            '&code='+ document.getElementById('code').value +
             '&bytes='+ parseInt(document.getElementById('bytes').value) +
             '&endian='+ document.getElementById('endian').value +
             '&range='+ document.getElementById('range').value +
