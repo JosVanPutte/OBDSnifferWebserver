@@ -7,6 +7,8 @@
 #include "configHtml.h"
 #include "testNumberHtml.h"
 #include "testPieHtml.h"
+#include "testBarHtml.h"
+#include "testGraphHtml.h"
 
 // ====== CHANGE THESE ======
 const char* ssid     = "vanPutte";
@@ -113,6 +115,30 @@ void setup() {
       Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
     }
     request->send(200, "text/html", (uint8_t *)testPieHtml, strlen(testPieHtml));
+  });
+  server.on("/testingbar.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)testBarHtml, strlen(testBarHtml));
+  });
+  server.on("/config", HTTP_POST, config);
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "Not found");
+  });
+  server.on("/testinggraph.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)testGraphHtml, strlen(testGraphHtml));
   });
   server.on("/config", HTTP_POST, config);
   server.onNotFound([](AsyncWebServerRequest *request) {
