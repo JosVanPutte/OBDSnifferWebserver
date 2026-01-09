@@ -5,7 +5,8 @@
 #include "storage.h"
 #include "rootHtml.h"
 #include "configHtml.h"
-#include "testHtml.h"
+#include "testNumberHtml.h"
+#include "testPieHtml.h"
 
 // ====== CHANGE THESE ======
 const char* ssid     = "vanPutte";
@@ -84,14 +85,16 @@ void setup() {
     request->send(200, "text/html", (uint8_t *)configHtml, strlen(configHtml));
   });
   server.on("/test.html", [](AsyncWebServerRequest *request) {
-    String testingPage = "/testing.html?label=";
+    String testingPage = "/testing";
+    testingPage.concat((const char *)jsonConfig["viz_type"]);
+    testingPage.concat(".html?label=");
     testingPage.concat((const char *)jsonConfig["name"]);
     testingPage.concat("&max=");
     testingPage.concat((const char *)jsonConfig["max_value"]);
     Serial.println(testingPage);
     request->redirect(testingPage);
   });
-  server.on("/testing.html", [](AsyncWebServerRequest *request) {
+  server.on("/testingnumber.html", [](AsyncWebServerRequest *request) {
     int pars = request->params();
     Serial.print("GOT params =");
     Serial.println(pars);
@@ -99,7 +102,17 @@ void setup() {
       const AsyncWebParameter *p = request->getParam(pars);
       Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
     }
-    request->send(200, "text/html", (uint8_t *)testHtml, strlen(testHtml));
+    request->send(200, "text/html", (uint8_t *)testNumberHtml, strlen(testNumberHtml));
+  });
+  server.on("/testingpie.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)testPieHtml, strlen(testPieHtml));
   });
   server.on("/config", HTTP_POST, config);
   server.onNotFound([](AsyncWebServerRequest *request) {
