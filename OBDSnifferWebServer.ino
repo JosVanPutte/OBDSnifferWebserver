@@ -1,31 +1,70 @@
 #include <WiFi.h>
+#include <WiFiAP.h>
 #include <ESPAsyncWebServer.h>
 #include <time.h>
 #include <ArduinoJson.h>
 #include "storage.h"
 #include "rootHtml.h"
+#include "resetWiFiHtml.h"
 #include "configHtml.h"
 #include "testNumberHtml.h"
 #include "testPieHtml.h"
 #include "testBarHtml.h"
 #include "testGraphHtml.h"
+#include "monitorNumberHtml.h"
+#include "monitorPieHtml.h"
+#include "monitorBarHtml.h"
+#include "monitorGraphHtml.h"
 
-// ====== CHANGE THESE ======
-const char* ssid     = "vanPutte";
-const char* password = "vanputte";
-
-// Time / NTP
-const char* ntpServer = "pool.ntp.org";
-
-// Timezone: Amsterdam (Europe/Amsterdam) is usually UTC+1, and UTC+2 in DST.
-const long gmtOffset_sec = 3600;      // UTC+1
-const int daylightOffset_sec = 0;     // Set 3600 if you want to force DST (not automatic)
 
 // non volatile ram
 nvs_handle_t nvs;
 
+const char *SSID = "OBDSniffer";
+void tryConnect() {
+  String ap_mode = getNonVolatile(nvs, "ap_mode");
+  String ssid = getNonVolatile(nvs, "ssid");
+  String password = getNonVolatile(nvs, "password");
+  if (ap_mode == "1" || ssid.isEmpty()) {
+    Serial.println("AP mode WiFi 'OBDSniffer'");
+    if (!WiFi.softAP(SSID, "")) {
+      Serial.println("Soft AP creation failed.");
+    }
+    IPAddress myIP = WiFi.softAPIP();
+    Serial.print("OBDSniffer IP address: ");
+    Serial.println(myIP);
+  } else {
+    WiFi.mode(WIFI_STA);
+    Serial.print("Connecting to WiFi ssid ");
+    Serial.print(ssid);
+    Serial.print(" password ");
+    Serial.println(password);
+    WiFi.begin(ssid, password);
+    for (int i=0; i<60; i++) {
+      delay(1000);
+      if (WiFi.status() == WL_CONNECTED) {
+        break;
+      }
+      if (i == 30) {
+        Serial.println(";");
+      } else {
+        Serial.print(".");
+      }
+    }
+    bool connected = WiFi.status() == WL_CONNECTED;
+    Serial.printf(".\n%sconnected to the WiFi.\n", connected ? "" : "NOT ");
+    if (!connected) {
+      // out in the car we need AP mode
+      setNonVolatile(nvs, "ap_mode", "on");
+    } else {
+      IPAddress myIP = WiFi.localIP();
+      Serial.print("OBDSniffer IP address: ");
+      Serial.println(myIP);
+    }
+  }
+}
 // Web server
-AsyncWebServer server(80);
+AsyncWebServer OBDServer(80);
 
 const size_t capacity = JSON_OBJECT_SIZE(8);
 StaticJsonDocument<capacity> jsonConfig;
@@ -48,11 +87,23 @@ void config(AsyncWebServerRequest *request) {
   }
   request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
 }
-
+void wifi(AsyncWebServerRequest *request) {
+  int pars = request->params();
+  Serial.print("GOT HTTP_POST params =");
+  Serial.println(pars);
+  while(--pars >= 0) {
+    const AsyncWebParameter *p = request->getParam(pars);
+    Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    setNonVolatile(nvs, p->name().c_str(), p->value().c_str());
+  }
+  request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
+}
+float CANValue = 0;
 
 void setup() {
   Serial.begin(115200);
   nvs = initNvs();
+  tryConnect();
 
   String saved = getNonVolatile(nvs, "config");
   if (!saved.isEmpty()) {
@@ -61,33 +112,51 @@ void setup() {
     if (error) {
       Serial.printf("failed to deserialize %s", saved.c_str());
     } else {
-      Serial.printf("deserialization OK");
-      Serial.println((const char *)jsonConfig["name"]);
+      Serial.println("deserialization OK");
+      Serial.printf("label %s\n", (const char *)jsonConfig["name"]);
     }
   }
-  // Connect Wi-Fi
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected!");
-  Serial.print("ESP32 IP address: ");
-  Serial.println(WiFi.localIP());
-
-  // NTP time init
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
   // Web routes
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+  OBDServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String ssid = getNonVolatile(nvs, "ssid");
+    String password = getNonVolatile(nvs, "password");
+    String homePage = "/index.html";
+    if (!ssid.isEmpty()) {
+      homePage.concat( "?ssid=");
+      homePage.concat(ssid);
+      homePage.concat("&password=");
+      homePage.concat(password);
+    }
+    Serial.println(homePage);
+    request->redirect(homePage);
+  });
+  OBDServer.on("/get-value", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String json = "{\"waarde\": " + String(CANValue, 2) + "}";
+    request->send(200, "application/json", json);
+  });
+    
+  OBDServer.on("/index.html", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
   });
-  server.on("/configuratie.html", [](AsyncWebServerRequest *request) {
+  OBDServer.on("/reset-wifi.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/html", (uint8_t *)resetWiFiHtml, strlen(resetWiFiHtml));
+  });
+  OBDServer.on("/configuratie.html", [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", (uint8_t *)configHtml, strlen(configHtml));
   });
-  server.on("/test.html", [](AsyncWebServerRequest *request) {
-    String testingPage = "/testing";
+  OBDServer.on("/visualisation.html", [](AsyncWebServerRequest *request) {
+  String testingPage = "/visualisation";
+    testingPage.concat((const char *)jsonConfig["viz_type"]);
+    testingPage.concat(".html?label=");
+    testingPage.concat((const char *)jsonConfig["name"]);
+    testingPage.concat("&max=");
+    testingPage.concat((const char *)jsonConfig["max_value"]);
+    Serial.println(testingPage);
+    request->redirect(testingPage);
+    });
+  OBDServer.on("/test.html", [](AsyncWebServerRequest *request) {
+    String testingPage = "/test";
     testingPage.concat((const char *)jsonConfig["viz_type"]);
     testingPage.concat(".html?label=");
     testingPage.concat((const char *)jsonConfig["name"]);
@@ -96,7 +165,7 @@ void setup() {
     Serial.println(testingPage);
     request->redirect(testingPage);
   });
-  server.on("/testingnumber.html", [](AsyncWebServerRequest *request) {
+  OBDServer.on("/testnumber.html", [](AsyncWebServerRequest *request) {
     int pars = request->params();
     Serial.print("GOT params =");
     Serial.println(pars);
@@ -106,7 +175,7 @@ void setup() {
     }
     request->send(200, "text/html", (uint8_t *)testNumberHtml, strlen(testNumberHtml));
   });
-  server.on("/testingpie.html", [](AsyncWebServerRequest *request) {
+  OBDServer.on("/testpie.html", [](AsyncWebServerRequest *request) {
     int pars = request->params();
     Serial.print("GOT params =");
     Serial.println(pars);
@@ -116,7 +185,7 @@ void setup() {
     }
     request->send(200, "text/html", (uint8_t *)testPieHtml, strlen(testPieHtml));
   });
-  server.on("/testingbar.html", [](AsyncWebServerRequest *request) {
+  OBDServer.on("/testbar.html", [](AsyncWebServerRequest *request) {
     int pars = request->params();
     Serial.print("GOT params =");
     Serial.println(pars);
@@ -126,11 +195,7 @@ void setup() {
     }
     request->send(200, "text/html", (uint8_t *)testBarHtml, strlen(testBarHtml));
   });
-  server.on("/config", HTTP_POST, config);
-  server.onNotFound([](AsyncWebServerRequest *request) {
-    request->send(404, "text/plain", "Not found");
-  });
-  server.on("/testinggraph.html", [](AsyncWebServerRequest *request) {
+  OBDServer.on("/testgraph.html", [](AsyncWebServerRequest *request) {
     int pars = request->params();
     Serial.print("GOT params =");
     Serial.println(pars);
@@ -140,12 +205,66 @@ void setup() {
     }
     request->send(200, "text/html", (uint8_t *)testGraphHtml, strlen(testGraphHtml));
   });
-  server.on("/config", HTTP_POST, config);
-  server.onNotFound([](AsyncWebServerRequest *request) {
+  OBDServer.on("/monitor.html", [](AsyncWebServerRequest *request) {
+    String testingPage = "/monitor";
+    testingPage.concat((const char *)jsonConfig["viz_type"]);
+    testingPage.concat(".html?label=");
+    testingPage.concat((const char *)jsonConfig["name"]);
+    testingPage.concat("&max=");
+    testingPage.concat((const char *)jsonConfig["max_value"]);
+    Serial.println(testingPage);
+    request->redirect(testingPage);
+  });
+  OBDServer.on("/monitornumber.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)monitorNumberHtml, strlen(monitorNumberHtml));
+  });
+  OBDServer.on("/monitorpie.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)monitorPieHtml, strlen(monitorPieHtml));
+  });
+  OBDServer.on("/monitorbar.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)monitorBarHtml, strlen(monitorBarHtml));
+  });
+  OBDServer.on("/monitorgraph.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("GOT params =");
+    Serial.println(pars);
+    while(--pars >= 0) {
+      const AsyncWebParameter *p = request->getParam(pars);
+      Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+    }
+    request->send(200, "text/html", (uint8_t *)monitorGraphHtml, strlen(monitorGraphHtml));
+  });
+  OBDServer.on("/config", HTTP_POST, config);
+  OBDServer.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not found");
   });
-
-  server.begin();
+  OBDServer.on("/config", HTTP_POST, config);
+  OBDServer.on("/wifi", HTTP_POST, wifi);
+  OBDServer.onNotFound([](AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "Not found");
+  });
+  OBDServer.begin();
   Serial.println("Web server started. Open the IP in your browser.");
 }
 
