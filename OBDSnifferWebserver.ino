@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WiFiAP.h>
 #include <ESPAsyncWebServer.h>
+#include <ESP32-TWAI-CAN.hpp>
 #include <time.h>
 #include <ArduinoJson.h>
 #include "storage.h"
@@ -16,6 +17,7 @@
 #include "monitorBarHtml.h"
 #include "monitorGraphHtml.h"
 
+uint16_t PID;
 
 // non volatile ram
 nvs_handle_t nvs;
@@ -70,6 +72,28 @@ const size_t capacity = JSON_OBJECT_SIZE(8);
 StaticJsonDocument<capacity> jsonConfig;
 boolean jsonValid = false;
 
+const char *getConfig(const char *id) {
+  if (jsonValid && jsonConfig.containsKey(id)) {
+    return (const char *)jsonConfig[id];
+  }
+  return "";
+}
+int getIntConfig(const char *id) {
+  String val = getConfig(id);
+  if (val.isEmpty()) {
+    return 0;
+  }
+  return atoi(val.c_str());
+}
+
+float getFloatConfig(const char *id) {
+  String val = getConfig(id);
+  if (val.isEmpty()) {
+    return 0;
+  }
+  return atof(val.c_str());
+}
+
 void config(AsyncWebServerRequest *request) {
   int pars = request->params();
   Serial.print("GOT HTTP_POST params =");
@@ -85,6 +109,8 @@ void config(AsyncWebServerRequest *request) {
   } else {
     Serial.println(configStr) ;
     setNonVolatile(nvs, "config", configStr.c_str());
+    PID = std::stoi(getConfig("code"), NULL, 16);
+    Serial.printf("label %s PID %s = %d\n", getConfig("name"),getConfig("code"), PID);
     jsonValid = true;
   }
   request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
@@ -100,14 +126,53 @@ void wifi(AsyncWebServerRequest *request) {
   }
   request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
 }
-float CANValue = 0;
 
-const char *getConfig(const char *id) {
-  if (jsonValid && jsonConfig[id] != NULL) {
-    return (const char *)jsonConfig[id];
+// Can Frame
+CanFrame CANFrame;
+
+// get the 16 bits value at the byte offset
+const uint16_t getInt16(const uint8_t *charPtr, bool bigEndian) {
+  if (!bigEndian) {
+    return *(const uint16_t *) charPtr;
   }
-  return "";
+  uint8_t little = *charPtr++;
+  uint8_t big = *charPtr;
+  return big << 8 + little;
 }
+// Find the PID in the data of an OBD2 frame. OBD2 uses a 2-byte PID for Extended CAN frames, but 1 byte for Standard CAN frames
+uint16_t getPID(const CanFrame& frame)
+{
+  uint8_t pidLengthInBytes = frame.extd ? 2 : 1;
+  return (pidLengthInBytes == 1) ? frame.data[2] : getInt16(&frame.data[2], false);
+}
+
+void CANReader(void *par) {
+  while (1) {
+    CanFrame receivedOBD2Frame;
+    while(ESP32Can.readFrame(receivedOBD2Frame)) {
+      uint16_t msgPID = getPID(receivedOBD2Frame);
+      if (msgPID == PID) {
+         CANFrame = receivedOBD2Frame;
+      }
+    }
+    delay(1);
+  }
+}
+float getCANValue() {
+  int offset = getIntConfig("offset");
+  uint16_t intVal;
+  if (getIntConfig("bytes") == 2) {
+    intVal = getInt16(&CANFrame.data[offset], !strcmp("little", getConfig("endian")));
+  } else {
+    intVal = CANFrame.data[offset];
+  }
+  float value = intVal * getFloatConfig("factor");
+  if (!strcmp("integer", getConfig("datatype"))) {
+    value = round(value);
+  }
+  return value;
+}
+
 void setup() {
   Serial.begin(115200);
   nvs = initNvs();
@@ -122,7 +187,8 @@ void setup() {
     } else {
       jsonValid = true;
       Serial.println("deserialization OK");
-      Serial.printf("label %s\n", (const char *)jsonConfig["name"]);
+      PID = std::stoi(getConfig("code"), NULL, 16);
+      Serial.printf("label %s PID %s = %d\n", getConfig("name"),getConfig("code"), PID);
     }
   }
 
@@ -141,6 +207,7 @@ void setup() {
     request->redirect(homePage);
   });
   OBDServer.on("/get-value", [](AsyncWebServerRequest *request) {
+    float CANValue = getCANValue();
     String json = "{\"waarde\": " + String(CANValue, 2) + "}";
     request->send(200, "application/json", json);
   });
@@ -275,8 +342,8 @@ void setup() {
       testingPage.concat(getConfig("max_value"));
       Serial.println(testingPage);
       request->redirect(testingPage);
-    });
-  }
+    }
+  });
   OBDServer.on("/monitornumber.html", [](AsyncWebServerRequest *request) {
     int pars = request->params();
     Serial.print("GOT params =");
@@ -324,8 +391,22 @@ void setup() {
   });
   OBDServer.begin();
   Serial.println("Web server started. Open the IP in your browser.");
+  // CAN frames with non-valid OBD2 data can be received on the CAN bus. We're not interested in those, therefore we want to filter them out.
+  // Valid extended CAN IDs are in the range [0x18DAF100 .. 0x18DAF1FF], so we setup a filter to only receive CAN IDs in the range [0x18000000 .. 0x18FFFFFF]
+  twai_filter_config_t canFilter;
+  canFilter.acceptance_code = 0x18000000U << 3;
+  canFilter.acceptance_mask = 0x00FFFFFFU << 3;
+  canFilter.single_filter = true;
+  while (!ESP32Can.begin(TWAI_SPEED_500KBPS, 4, 5, 16, 16, &canFilter)) {
+    Serial.println("CAN bus init failed");
+    delay(5000);
+  }
+  TaskHandle_t Task0;
+  xTaskCreatePinnedToCore(CANReader, "CANReader",  10000, NULL, 0,  &Task0, 0); 
+  Serial.println("CAN bus started!");
 }
 
+
 void loop() {
-  // 
+  delay(1);
 }
