@@ -10,14 +10,12 @@ const char *configHtml = R"rawliteral(
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f0f0f0; margin-bottom: 25px; padding-bottom: 15px; }
         .form-group { margin-bottom: 18px; }
         label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.9em; color: #555; }
-        input, select { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 6px; box-sizing: border-box; transition: border 0.2s; }
-        input:focus { border-color: #007bff; outline: none; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #ccd0d5; border-radius: 6px; box-sizing: border-box; }
         .row { display: flex; gap: 15px; }
         .btn-group { display: flex; gap: 10px; margin-top: 20px; }
-        .btn { border: none; padding: 14px; width: 100%; border-radius: 6px; cursor: pointer; font-size: 1em; font-weight: bold; transition: opacity 0.2s; }
+        .btn { border: none; padding: 14px; width: 100%; border-radius: 6px; cursor: pointer; font-weight: bold; }
         .btn-save { background: #007bff; color: white; }
         .btn-export { background: #28a745; color: white; }
-        .btn:hover { opacity: 0.9; }
         .lang-switch { cursor: pointer; color: #007bff; font-weight: bold; border: 1px solid #007bff; padding: 5px 12px; border-radius: 20px; font-size: 0.8em; }
     </style>
 </head>
@@ -26,163 +24,170 @@ const char *configHtml = R"rawliteral(
 <div class="container">
     <div class="header">
         <h2 id="title">Configuratie</h2>
-        <span class="lang-switch" onclick="toggleLanguage()" id="langBtn">English</span>
     </div>
 
-    <form id="configForm" action="config" method="post">
+    <form id="configForm">
         <div class="row">
-            <div class="form-group" style="flex: 2;">
+            <div class="form-group" style="flex: 3;">
                 <label id="lbl-name">Naam</label>
                 <input type="text" id="name" required>
             </div>
-            <div class="form-group" style="flex: 2;">
+        </div>
+
+        <div class="row">
+            <div class="form-group" style="flex: 1;">
                 <label id="lbl-code">Code (Hex)</label>
                 <input type="text" id="code" placeholder="0x1A2B" pattern="^0x[0-9a-fA-F]+$" required>
             </div>
             <div class="form-group" style="flex: 1;">
-                <label id="lbl-bytes">Bytes</label>
-                <input type="number" id="bytes" min="1" max="8" value="1">
+                <label id="lbl-datatype">Datatype</label>
+                <select id="datatype">
+                    <option value="integer">Integer</option>
+                    <option value="float">Float</option>
+                </select>
             </div>
-        </div>
-
-        <div class="form-group">
-            <label id="lbl-endian">Endianness</label>
-            <select id="endian">
-                <option value="little">Little Endian</option>
-                <option value="big">Big Endian</option>
-            </select>
+            <div class="form-group" style="flex: 1;">
+                <label id="lbl-offset">Offset</label>
+                <input type="number" id="offset">
+            </div>
         </div>
 
         <div class="row">
             <div class="form-group" style="flex: 1;">
-                <label id="lbl-range">Bereik (Range)</label>
-                <input type="text" id="range" placeholder="0-100">
+                <label id="lbl-bytes">Bytes</label>
+                <input type="number" id="bytes" min="1" max="8">
             </div>
+            <div class="form-group" style="flex: 1;">
+                <label id="lbl-endian">Endianness</label>
+                <select id="endian">
+                    <option value="little">Little Endian</option>
+                    <option value="big">Big Endian</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row">
             <div class="form-group" style="flex: 1;">
                 <label id="lbl-max">Max. Waarde</label>
                 <input type="number" id="max_value" step="any">
             </div>
-        </div>
+            <div class="form-group" style="flex: 1;">
+                <label id="lbl-factor">Vermenigvuldigings factor</label>
+                <input type="number" id="factor" step="0.0001">
+            </div>
 
-        <div class="form-group">
-            <label id="lbl-factor">Vermenigvuldigings factor</label>
-            <input type="number" id="factor" step="0.0001" value="1.0">
+            <div class="form-group" style="flex: 1;">
+                <label id="lbl-type">Visualisatie Type</label>
+                <select id="viz_type">
+                    <option value="graph" data-nl="Grafiek" data-en="Graph">Grafiek</option>
+                    <option value="bar" data-nl="Balk" data-en="Bar">Balk</option>
+                    <option value="number" data-nl="Getal" data-en="Number">Getal</option>
+                    <option value="pie" data-nl="Meter" data-en="Gauge">Meter</option>
+                </select>
+            </div>
         </div>
-
-        <div class="form-group">
-            <label id="lbl-type">Visualisatie Type</label>
-            <select id="viz_type">
-                <option value="graph" data-nl="Grafiek" data-en="Graph">Grafiek</option>
-                <option value="bar" data-nl="Balk" data-en="Bar">Balk</option>
-                <option value="pie" data-nl="Cirkel" data-en="Pie">Cirkel</option>
-                <option value="number" data-nl="Getal" data-en="Number">Getal</option>
-            </select>
-        </div>
-
         <div class="btn-group">
-            <button type="submit" class="btn btn-save" id="btn-save" onClick="postToServer()">Send</button>
+            <button type="button" class="btn btn-save" id="btn-save" onclick="postToServer()">Send</button>
             <button type="button" class="btn btn-export" id="btn-export" onclick="exportJSON()">Export JSON</button>
         </div>
     </form>
 </div>
 
 <script>
-    currentLang = 'nl';
-    window.onload = function() {
-        const urlParams = new URLSearchParams(window.location.search);
-        currentLang = urlParams.get('lang') || 'nl';
-        setLanguage();
-    }
-
+    let currentLang = 'nl';
     const translations = {
         nl: {
             title: "Configuratie", langBtn: "English", name: "Naam", code: "Code (Hex)", 
-            bytes: "Aantal Bytes", endian: "Endianness", range: "Bereik", 
+            offset: "Offset", datatype: "Datatype",
+            bytes: "Aantal Bytes", endian: "Endianness", 
             max: "Maximale Waarde", factor: "Factor", type: "Visualisatie", 
             save: "Zenden", export: "Exporteer JSON"
         },
         en: {
             title: "Configuration", langBtn: "Nederlands", name: "Name", code: "Code (Hex)", 
-            bytes: "Byte Count", endian: "Endianness", range: "Range", 
+            offset: "Offset", datatype: "Data Type",
+            bytes: "Byte Count", endian: "Endianness", 
             max: "Max Value", factor: "Multiplier", type: "Visualization", 
             save: "Send", export: "Export JSON"
         }
     };
 
+    window.onload = function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Vul velden op basis van URL (bijv: ?name=Motor&offset=10&datatype=float)
+        const fields = ['name', 'code', 'offset', 'datatype', 'bytes', 'endian', 'max_value', 'factor', 'viz_type'];
+        fields.forEach(field => {
+            const val = urlParams.get(field);
+            if (val !== null) {
+                const el = document.getElementById(field);
+                if (el) el.value = val;
+            }
+        });
+
+        currentLang = urlParams.get('lang') || 'nl';
+        setLanguage();
+    }
+
+    function setLanguage() {
+        const t = translations[currentLang];
+        Object.keys(t).forEach(key => {
+            const el = document.getElementById('lbl-' + key) || document.getElementById(key) || document.getElementById('btn-' + key);
+            if (el && key !== 'title' && key !== 'langBtn') el.innerText = t[key];
+        });
+        document.getElementById('title').innerText = t.title;
+        document.getElementById('langBtn').innerText = t.langBtn;
+        
+        // Update de dropdown opties (data-nl / data-en)
+        const typeSelect = document.getElementById('viz_type');
+        for (let opt of typeSelect.options) {
+            opt.text = opt.getAttribute(`data-${currentLang}`);
+        }
+    }
+
     function toggleLanguage() {
         currentLang = currentLang === 'nl' ? 'en' : 'nl';
         setLanguage();
     }
-    function setLanguage() {
-        const t = translations[currentLang];
-        document.getElementById('title').innerText = t.title;
-        document.getElementById('langBtn').innerText = t.langBtn;
-        document.getElementById('lbl-name').innerText = t.name;
-        document.getElementById('lbl-code').innerText = t.code;
-        document.getElementById('lbl-bytes').innerText = t.bytes;
-        document.getElementById('lbl-endian').innerText = t.endian;
-        document.getElementById('lbl-range').innerText = t.range;
-        document.getElementById('lbl-max').innerText = t.max;
-        document.getElementById('lbl-factor').innerText = t.factor;
-        document.getElementById('lbl-type').innerText = t.type;
-        document.getElementById('btn-save').innerText = t.save;
-        document.getElementById('btn-export').innerText = t.export;
 
-        const typeSelect = document.getElementById('viz_type');
-        for (let option of typeSelect.options) {
-            option.text = option.getAttribute(`data-${currentLang}`);
-        }
-	}
-   	async function postToServer() {
-        try {
-            const config = {
-                name: document.getElementById('name').value,
-                hexCode: document.getElementById('code').value,
-                byteCount: parseInt(document.getElementById('bytes').value),
-                endianness: document.getElementById('endian').value,
-                range: document.getElementById('range').value,
-                maxValue: parseFloat(document.getElementById('max_value').value),
-                multiplier: parseFloat(document.getElementById('factor').value),
-                visualization: document.getElementById('viz_type').value
-            };
-            const response = await fetch('/config'+
+    async function postToServer() {
+        // Verzamel data voor de POST request
+        const config = {};
+        ['name', 'code', 'offset', 'datatype', 'bytes', 'endian', 'max_value', 'factor', 'viz_type']
+        .forEach(id => config[id] = document.getElementById(id).value);
+
+        console.log("Verzenden:", config);
+        const response = await fetch('/config'+
             '?name='+ document.getElementById('name').value +
             '&code='+ document.getElementById('code').value +
+            '&offset='+ document.getElementById('offset').value +
+            '&datatype='+ document.getElementById('datatype').value +
             '&bytes='+ parseInt(document.getElementById('bytes').value) +
             '&endian='+ document.getElementById('endian').value +
-            '&range='+ document.getElementById('range').value +
             '&max_value=' + parseFloat(document.getElementById('max_value').value) +
             '&factor=' + parseFloat(document.getElementById('factor').value) +
             '&viz_type=' +  document.getElementById('viz_type').value
             ,{
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(config)
-			});
-        } catch (error) {
-            console.error('Fout bij verzenden:', error);
-            alert(currentLang === 'nl' ? 'Fout bij het verbinden met de server.' : 'Error connecting to server.');
-        }
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            });
+
+        alert("Data verzonden! Zie console.");
+        // Hier kun je jouw fetch-logica plaatsen
     }
 
     function exportJSON() {
-        const config = {
-            hexCode: document.getElementById('code').value,
-            byteCount: parseInt(document.getElementById('bytes').value),
-            endianness: document.getElementById('endian').value,
-            range: document.getElementById('range').value,
-            maxValue: parseFloat(document.getElementById('max_value').value),
-            multiplier: parseFloat(document.getElementById('factor').value),
-            visualization: document.getElementById('viz_type').value,
-            timestamp: new Date().toISOString()
-        };
+        const config = {};
+        ['name', 'code', 'offset', 'datatype', 'bytes', 'endian', 'max_value', 'factor', 'viz_type']
+        .forEach(id => config[id] = document.getElementById(id).value);
 
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 4));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "stream_config.json");
+        downloadAnchorNode.setAttribute("download", "config.json");
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
