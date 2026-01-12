@@ -162,7 +162,7 @@ float getCANValue() {
   int offset = getIntConfig("offset");
   uint16_t intVal;
   if (getIntConfig("bytes") == 2) {
-    intVal = getInt16(&CANFrame.data[offset], !strcmp("little", getConfig("endian")));
+    intVal = getInt16(&CANFrame.data[offset], strcmp("little", getConfig("endian")));
   } else {
     intVal = CANFrame.data[offset];
   }
