@@ -40,6 +40,11 @@ const char *resetWiFiHtml = R"rawliteral(
                 <option value="0" id="opt-no">Nee</option>
                 <option value="1" id="opt-yes">Ja</option>
             </select>
+            <label id="lbl-swap" for="swap_mode">Swap CAN H en L</label>
+            <select id="swap_mode" name="swap_mode">
+                <option value="0" id="opt-no1">Nee</option>
+                <option value="1" id="opt-yes1">Ja</option>
+            </select>
         </div>
 
         <button type="button" id="btn-save" onClick="postToServer()">Instellingen Opslaan</button>
@@ -74,11 +79,15 @@ const char *resetWiFiHtml = R"rawliteral(
         const urlParams = new URLSearchParams(window.location.search);
         const ssid = urlParams.get('ssid') || "";
         const password = urlParams.get('password') || "";
+        const ap_mode = urlParams.get('ap_mode') || 0;
+        const swap_mode = urlParams.get('swap_mode') | 0;
         const lang = urlParams.get('lang') === 'en' ? 'en' : 'nl';
         const t = translations[lang];
 
         document.getElementById('ssid').value = ssid;
         document.getElementById('password').value = password;
+        document.getElementById('ap_mode').value = ap_mode;
+        document.getElementById('swap_mode').value = swap_mode;
         document.getElementById('title').innerText = t.title;
         document.getElementById('lbl-ssid').innerText = t.ssid;
         document.getElementById('lbl-pw').innerText = t.pw;
@@ -89,6 +98,8 @@ const char *resetWiFiHtml = R"rawliteral(
         // Vertaal opties in de selectbox
         document.getElementById('opt-no').innerText = t.no;
         document.getElementById('opt-yes').innerText = t.yes;
+        document.getElementById('opt-no1').innerText = t.no;
+        document.getElementById('opt-yes1').innerText = t.yes;
         
         document.documentElement.lang = lang;
     }
@@ -97,6 +108,7 @@ const char *resetWiFiHtml = R"rawliteral(
         const ssid = document.getElementById('ssid').value;
         const password = document.getElementById('password').value;
         const apMode = document.getElementById('ap_mode').value;
+        const swapMode = document.getElementById('swap_mode').value;
         const lang = document.documentElement.lang;
 
         try {
@@ -104,13 +116,14 @@ const char *resetWiFiHtml = R"rawliteral(
             const params = new URLSearchParams({
                 ssid: ssid,
                 password: password,
-                ap_mode: apMode
+                ap_mode: apMode,
+                swap_mode : swapMode
             });
 
             const response = await fetch('/wifi?' + params.toString(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ssid, password, ap_mode: apMode }) 
+                body: JSON.stringify({ ssid, password, ap_mode: apMode, swap_mode : swapMode }) 
             });
 
             if(response.ok) {

@@ -22,14 +22,16 @@ uint16_t PID;
 // non volatile ram
 nvs_handle_t nvs;
 
-const char *SSID = "OBDSniffer";
+String ssid = "";
+String password = "";
+
 void tryConnect() {
   String ap_mode = getNonVolatile(nvs, "ap_mode");
-  String ssid = getNonVolatile(nvs, "ssid");
-  String password = getNonVolatile(nvs, "password");
+  ssid = getNonVolatile(nvs, "ssid");
+  password = getNonVolatile(nvs, "password");
   if (ap_mode == "1" || ssid.isEmpty()) {
     Serial.println("AP mode WiFi 'OBDSniffer'");
-    if (!WiFi.softAP(SSID, "")) {
+    if (!WiFi.softAP("OBDSniffer", "")) {
       Serial.println("Soft AP creation failed.");
     }
     IPAddress myIP = WiFi.softAPIP();
@@ -194,28 +196,42 @@ void setup() {
 
   // Web routes
   OBDServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    String ssid = getNonVolatile(nvs, "ssid");
-    String password = getNonVolatile(nvs, "password");
-    String homePage = "/index.html";
-    if (!ssid.isEmpty()) {
-      homePage.concat( "?ssid=");
-      homePage.concat(ssid);
-      homePage.concat("&password=");
-      homePage.concat(password);
-    }
-    Serial.println(homePage);
-    request->redirect(homePage);
+    request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
   });
   OBDServer.on("/get-value", [](AsyncWebServerRequest *request) {
     float CANValue = getCANValue();
-    String json = "{\"waarde\": " + String(CANValue, 2) + "}";
+    int nrDecimals = strcmp("integer", getConfig("datatype")) ? 1 : 0;
+    String json = "{\"waarde\": " + String(CANValue, nrDecimals) + "}";
     request->send(200, "application/json", json);
   });
     
-  OBDServer.on("/index.html", [](AsyncWebServerRequest *request) {
-    request->send(200, "text/html", (uint8_t *)rootHtml, strlen(rootHtml));
-  });
   OBDServer.on("/reset-wifi.html", [](AsyncWebServerRequest *request) {
+    int pars = request->params();
+    Serial.print("configuratie GOT params =");
+    Serial.println(pars);
+    String wifiPage = "/wifi.html";
+    if (!ssid.isEmpty()) {
+      wifiPage.concat( "?ssid=");
+      wifiPage.concat(ssid);
+      wifiPage.concat("&password=");
+      wifiPage.concat(password);
+      wifiPage.concat("&ap_mode=");
+      wifiPage.concat(getNonVolatile(nvs, "ap_mode"));
+      wifiPage.concat("&swap_mode=");
+      wifiPage.concat(getNonVolatile(nvs, "swap_mode"));
+       while(--pars >= 0) {
+        const AsyncWebParameter *p = request->getParam(pars);
+        Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
+        wifiPage.concat("&");
+        wifiPage.concat(p->name());
+        wifiPage.concat("=");
+        wifiPage.concat(p->value());
+      }
+    }
+    Serial.println(wifiPage);
+    request->redirect(wifiPage);
+  });
+  OBDServer.on("/wifi.html", [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", (uint8_t *)resetWiFiHtml, strlen(resetWiFiHtml));
   });
   OBDServer.on("/configuratie.html", [](AsyncWebServerRequest *request) {
@@ -397,7 +413,14 @@ void setup() {
   canFilter.acceptance_code = 0x18000000U << 3;
   canFilter.acceptance_mask = 0x00FFFFFFU << 3;
   canFilter.single_filter = true;
-  while (!ESP32Can.begin(TWAI_SPEED_500KBPS, 4, 5, 16, 16, &canFilter)) {
+  int canL = 4;
+  int canH = 5;
+  if (!strcmp("1", getNonVolatile(nvs, "swap_mode").c_str())) {
+    Serial.println("CAN H and L swapped");
+    canH = 4;
+    canL = 5;
+  }
+  while (!ESP32Can.begin(TWAI_SPEED_500KBPS, canL, canH, 16, 16, &canFilter)) {
     Serial.println("CAN bus init failed");
     delay(5000);
   }
