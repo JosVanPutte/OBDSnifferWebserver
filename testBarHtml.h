@@ -37,6 +37,7 @@ const char *testBarHtml = R"rawliteral(
     const urlParams = new URLSearchParams(window.location.search);
     const label = urlParams.get('label') || "Waarde";
     const maxVal = parseFloat(urlParams.get('max')) || 100;
+    const min = parseFloat(urlParams.get('min')) || 0; // Gebruik 'min' uit URL, anders 0
 
     document.getElementById('lbl-display').innerText = label;
     document.getElementById('max-display').innerText = `Max: ${maxVal}`;
@@ -57,8 +58,8 @@ const char *testBarHtml = R"rawliteral(
         if (currentValue >= maxVal) {
             currentValue = maxVal;
             direction = -1;
-        } else if (currentValue <= 0) {
-            currentValue = 0;
+        } else if (currentValue <= min) {
+            currentValue = min;
             direction = 1;
         }
 
@@ -66,7 +67,7 @@ const char *testBarHtml = R"rawliteral(
         valDisplay.innerText = Math.round(currentValue);
 
         // Staaf hoogte updaten (in procenten)
-        const percentage = (currentValue / maxVal) * 100;
+        const percentage = ((currentValue - min) / (maxVal - min)) * 100;
         barFill.style.height = percentage + "%";
 
         // Optioneel: kleur veranderen als de waarde hoog is

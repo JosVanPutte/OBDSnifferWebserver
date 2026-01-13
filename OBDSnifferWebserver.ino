@@ -19,6 +19,10 @@
 
 uint16_t PID;
 
+#define BUILTIN 2
+#define GREEN 26
+#define BLUE 27
+
 // non volatile ram
 nvs_handle_t nvs;
 
@@ -30,6 +34,7 @@ void tryConnect() {
   ssid = getNonVolatile(nvs, "ssid");
   password = getNonVolatile(nvs, "password");
   if (ap_mode == "1" || ssid.isEmpty()) {
+    digitalWrite(GREEN, HIGH);
     Serial.println("AP mode WiFi 'OBDSniffer'");
     if (!WiFi.softAP("OBDSniffer", "")) {
       Serial.println("Soft AP creation failed.");
@@ -133,18 +138,21 @@ void wifi(AsyncWebServerRequest *request) {
 CanFrame CANFrame;
 
 // get the 16 bits value at the byte offset
-const uint16_t getInt16(const uint8_t *charPtr, bool bigEndian) {
-  if (!bigEndian) {
-    return *(const uint16_t *) charPtr;
-  }
+int16_t getInt16(const uint8_t *charPtr, bool bigEndian) {
   uint8_t little = *charPtr++;
   uint8_t big = *charPtr;
-  return big << 8 + little;
+  int16_t result;
+  if (bigEndian) {
+    result = (int16_t)(little << 8) | big;
+  } else {
+    result = (int16_t)(big << 8) | little;
+  }
+  return result;
 }
 // Find the PID in the data of an OBD2 frame. OBD2 uses a 2-byte PID for Extended CAN frames, but 1 byte for Standard CAN frames
-uint16_t getPID(const CanFrame& frame)
+int16_t getPID(const CanFrame& frame)
 {
-  uint8_t pidLengthInBytes = frame.extd ? 2 : 1;
+  int8_t pidLengthInBytes = frame.extd ? 2 : 1;
   return (pidLengthInBytes == 1) ? frame.data[2] : getInt16(&frame.data[2], false);
 }
 
@@ -152,26 +160,41 @@ void CANReader(void *par) {
   while (1) {
     CanFrame receivedOBD2Frame;
     while(ESP32Can.readFrame(receivedOBD2Frame)) {
-      uint16_t msgPID = getPID(receivedOBD2Frame);
+      int16_t msgPID = getPID(receivedOBD2Frame);
       if (msgPID == PID) {
+         digitalWrite(BLUE, HIGH);
          CANFrame = receivedOBD2Frame;
       }
     }
     delay(1);
+    digitalWrite(BLUE, LOW);
   }
 }
 float getCANValue() {
+  digitalWrite(BUILTIN, HIGH);
+  int16_t intVal;
   int offset = getIntConfig("offset");
-  uint16_t intVal;
-  if (getIntConfig("bytes") == 2) {
+  int16_t nBits = getIntConfig("bits");
+  if (strcmp("byte", getConfig("datatype"))) {
     intVal = getInt16(&CANFrame.data[offset], strcmp("little", getConfig("endian")));
+    if (nBits < 16 && nBits > 0) {
+      int16_t mask = -1;
+      mask = mask >> (16 - nBits);
+      intVal &= mask;
+    }
   } else {
     intVal = CANFrame.data[offset];
+    if (nBits < 8 && nBits > 0) {
+      int8_t mask = -1;
+      mask = mask >> (8 - nBits);
+      intVal &= mask;
+    }
   }
   float value = intVal * getFloatConfig("factor");
   if (!strcmp("integer", getConfig("datatype"))) {
     value = round(value);
   }
+  digitalWrite(BUILTIN, LOW);
   return value;
 }
 
@@ -179,7 +202,9 @@ void setup() {
   Serial.begin(115200);
   nvs = initNvs();
   tryConnect();
-
+  pinMode(BUILTIN, OUTPUT);
+  pinMode(GREEN, OUTPUT);
+  pinMode(BLUE, OUTPUT);
   String saved = getNonVolatile(nvs, "config");
   if (!saved.isEmpty()) {
     Serial.println(saved);
@@ -255,12 +280,14 @@ void setup() {
       configPage.concat(getConfig("endian"));
       configPage.concat("&max_value=");
       configPage.concat(getConfig("max_value"));
+      configPage.concat("&min=");
+      configPage.concat(getConfig("min"));
       configPage.concat("&factor=");
       configPage.concat(getConfig("factor"));
       configPage.concat("&viz_type=");
       configPage.concat(getConfig("viz_type"));
-      configPage.concat("&bytes=");
-      configPage.concat(getConfig("bytes"));
+      configPage.concat("&bits=");
+      configPage.concat(getConfig("bits"));
       while(--pars >= 0) {
         const AsyncWebParameter *p = request->getParam(pars);
         Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
@@ -288,6 +315,8 @@ void setup() {
       testingPage.concat(getConfig("name"));
       testingPage.concat("&max=");
       testingPage.concat(getConfig("max_value"));
+      testingPage.concat("&min=");
+      testingPage.concat(getConfig("min"));
       Serial.println(testingPage);
       request->redirect(testingPage);
     }
@@ -302,6 +331,8 @@ void setup() {
       testingPage.concat(getConfig("name"));
       testingPage.concat("&max=");
       testingPage.concat(getConfig("max_value"));
+      testingPage.concat("&min=");
+      testingPage.concat(getConfig("min"));
       Serial.println(testingPage);
       request->redirect(testingPage);
     }
@@ -356,6 +387,8 @@ void setup() {
       testingPage.concat(getConfig("name"));
       testingPage.concat("&max=");
       testingPage.concat(getConfig("max_value"));
+      testingPage.concat("&min=");
+      testingPage.concat(getConfig("min"));
       Serial.println(testingPage);
       request->redirect(testingPage);
     }

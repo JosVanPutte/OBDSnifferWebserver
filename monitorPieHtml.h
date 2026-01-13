@@ -47,7 +47,7 @@ const char *monitorPieHtml = R"rawliteral(
     const label = urlParams.get('label') || "Data";
     const max = parseFloat(urlParams.get('max')) || 100;
     const intervalTime = parseInt(urlParams.get('ms')) || 1000; // Standaard elke seconde
-    const min = 0;
+    const min = parseFloat(urlParams.get('min')) || 0; // Gebruik 'min' uit URL, anders 0
 
     document.getElementById('lbl-display').innerText = label;
     

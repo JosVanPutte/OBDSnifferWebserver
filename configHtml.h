@@ -28,7 +28,11 @@ const char *configHtml = R"rawliteral(
 
     <form id="configForm">
         <div class="row">
-            <div class="form-group" style="flex: 3;">
+            <div class="form-group" style="flex: 1;">
+                <label id="lbl-code">Code (Hex)</label>
+                <input type="text" id="code" placeholder="0x1A2B" pattern="^0x[0-9a-fA-F]+$" required>
+            </div>
+            <div class="form-group" style="flex: 2;">
                 <label id="lbl-name">Naam</label>
                 <input type="text" id="name" required>
             </div>
@@ -36,14 +40,10 @@ const char *configHtml = R"rawliteral(
 
         <div class="row">
             <div class="form-group" style="flex: 1;">
-                <label id="lbl-code">Code (Hex)</label>
-                <input type="text" id="code" placeholder="0x1A2B" pattern="^0x[0-9a-fA-F]+$" required>
-            </div>
-            <div class="form-group" style="flex: 1;">
                 <label id="lbl-datatype">Datatype</label>
                 <select id="datatype">
-                    <option value="integer">Integer</option>
-                    <option value="float">Float</option>
+                    <option value="byte">Byte</option>
+                    <option value="word">Word</option>
                 </select>
             </div>
             <div class="form-group" style="flex: 1;">
@@ -54,8 +54,8 @@ const char *configHtml = R"rawliteral(
 
         <div class="row">
             <div class="form-group" style="flex: 1;">
-                <label id="lbl-bytes">Bytes</label>
-                <input type="number" id="bytes" min="1" max="8">
+                <label id="lbl-bits">Bits</label>
+                <input type="number" id="bits" min="1" max="16">
             </div>
             <div class="form-group" style="flex: 1;">
                 <label id="lbl-endian">Endianness</label>
@@ -70,6 +70,10 @@ const char *configHtml = R"rawliteral(
             <div class="form-group" style="flex: 1;">
                 <label id="lbl-max">Max. Waarde</label>
                 <input type="number" id="max_value" step="any">
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label id="lbl-min">Min. Waarde</label>
+                <input type="number" id="min" step="any">
             </div>
             <div class="form-group" style="flex: 1;">
                 <label id="lbl-factor">Vermenigvuldigings factor</label>
@@ -99,14 +103,14 @@ const char *configHtml = R"rawliteral(
         nl: {
             title: "Configuratie", langBtn: "English", name: "Naam", code: "Code (Hex)", 
             offset: "Offset", datatype: "Datatype",
-            bytes: "Aantal Bytes", endian: "Endianness", 
+            bits: "Aantal Bits", endian: "Endianness", min: "Minimale Waarde",
             max: "Maximale Waarde", factor: "Factor", type: "Visualisatie", 
             save: "Zenden", export: "Exporteer JSON"
         },
         en: {
             title: "Configuration", langBtn: "Nederlands", name: "Name", code: "Code (Hex)", 
             offset: "Offset", datatype: "Data Type",
-            bytes: "Byte Count", endian: "Endianness", 
+            bits: "Bit Count", endian: "Endianness", min: "Min Value",
             max: "Max Value", factor: "Multiplier", type: "Visualization", 
             save: "Send", export: "Export JSON"
         }
@@ -116,7 +120,7 @@ const char *configHtml = R"rawliteral(
         const urlParams = new URLSearchParams(window.location.search);
         
         // Vul velden op basis van URL (bijv: ?name=Motor&offset=10&datatype=float)
-        const fields = ['name', 'code', 'offset', 'datatype', 'bytes', 'endian', 'max_value', 'factor', 'viz_type'];
+        const fields = ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type'];
         fields.forEach(field => {
             const val = urlParams.get(field);
             if (val !== null) {
@@ -153,7 +157,7 @@ const char *configHtml = R"rawliteral(
     async function postToServer() {
         // Verzamel data voor de POST request
         const config = {};
-        ['name', 'code', 'offset', 'datatype', 'bytes', 'endian', 'max_value', 'factor', 'viz_type']
+        ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type']
         .forEach(id => config[id] = document.getElementById(id).value);
 
         console.log("Verzenden:", config);
@@ -162,9 +166,10 @@ const char *configHtml = R"rawliteral(
             '&code='+ document.getElementById('code').value +
             '&offset='+ document.getElementById('offset').value +
             '&datatype='+ document.getElementById('datatype').value +
-            '&bytes='+ parseInt(document.getElementById('bytes').value) +
+            '&bits='+ parseInt(document.getElementById('bits').value) +
             '&endian='+ document.getElementById('endian').value +
             '&max_value=' + parseFloat(document.getElementById('max_value').value) +
+            '&min=' + parseFloat(document.getElementById('min').value) +
             '&factor=' + parseFloat(document.getElementById('factor').value) +
             '&viz_type=' +  document.getElementById('viz_type').value
             ,{
@@ -181,7 +186,7 @@ const char *configHtml = R"rawliteral(
 
     function exportJSON() {
         const config = {};
-        ['name', 'code', 'offset', 'datatype', 'bytes', 'endian', 'max_value', 'factor', 'viz_type']
+        ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type']
         .forEach(id => config[id] = document.getElementById(id).value);
 
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 4));

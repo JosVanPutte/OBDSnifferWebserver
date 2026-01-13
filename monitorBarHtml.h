@@ -43,6 +43,7 @@ const char *monitorBarHtml = R"rawliteral(
     const urlParams = new URLSearchParams(window.location.search);
     const label = urlParams.get('label') || "Sensor";
     const maxVal = parseFloat(urlParams.get('max')) || 100;
+    const min = parseFloat(urlParams.get('min')) || 0; // Gebruik 'min' uit URL, anders 0
     const intervalTime = parseInt(urlParams.get('ms')) || 1000;
 
     document.getElementById('lbl-display').innerText = label;
@@ -66,7 +67,7 @@ const char *monitorBarHtml = R"rawliteral(
             valDisplay.innerText = Math.round(currentValue);
 
             // Percentage berekenen voor de hoogte
-            const percentage = Math.min(Math.max((currentValue / maxVal) * 100, 0), 100);
+            const percentage = (currentValue / (maxVal - min)) * 100;
             barFill.style.height = percentage + "%";
 
             // Kleur-logica (rood bij > 80%)

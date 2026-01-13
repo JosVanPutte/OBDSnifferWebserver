@@ -45,7 +45,7 @@ const char *testPieHtml = R"rawliteral(
     const urlParams = new URLSearchParams(window.location.search);
     const label = urlParams.get('label') || "Data";
     const max = parseFloat(urlParams.get('max')) || 100;
-    const min = 0;
+    const min = parseFloat(urlParams.get('min')) || 0; // Gebruik 'min' uit URL, anders 0
 
     document.getElementById('lbl-display').innerText = label;
 
