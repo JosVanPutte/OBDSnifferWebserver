@@ -79,6 +79,18 @@ const size_t capacity = JSON_OBJECT_SIZE(8);
 StaticJsonDocument<capacity> jsonConfig;
 boolean jsonValid = false;
 
+struct CANConfig {
+    int offset;
+    int bits;
+    float factor;
+    float minValue;    // De "minimale waarde" voor bytes
+    bool isByte;       // True als type "byte" is
+    bool isInteger;    // True als type "integer" is
+    bool isLittleEndian;
+    int ms;
+};
+CANConfig currentCfg; // De actieve configuratie
+
 const char *getConfig(const char *id) {
   if (jsonValid && jsonConfig.containsKey(id)) {
     return (const char *)jsonConfig[id];
@@ -101,6 +113,27 @@ float getFloatConfig(const char *id) {
   return atof(val.c_str());
 }
 
+
+void initConfig() {
+    currentCfg.offset = getIntConfig("offset");
+    currentCfg.bits = getIntConfig("bits");
+    currentCfg.factor = getFloatConfig("factor");
+    currentCfg.minValue = getFloatConfig("min"); // Zorg dat "min" in je brondata staat
+   
+    // Cache de string-vergelijkingen naar booleans
+    const char* type = getConfig("datatype");
+    currentCfg.isByte = (strcmp(type, "byte") == 0);
+    currentCfg.isInteger = (strcmp(type, "integer") == 0);
+   
+    const char* endian = getConfig("endian");
+    currentCfg.isLittleEndian = (strcmp(endian, "little") == 0);
+    int ms = getIntConfig("ms");
+    if (ms < 100) {
+      ms = 500;
+    }
+    currentCfg.ms = ms;
+}
+
 void config(AsyncWebServerRequest *request) {
   int pars = request->params();
   Serial.print("GOT HTTP_POST params =");
@@ -116,6 +149,7 @@ void config(AsyncWebServerRequest *request) {
   } else {
     Serial.println(configStr) ;
     setNonVolatile(nvs, "config", configStr.c_str());
+    initConfig();
     PID = std::stoi(getConfig("code"), NULL, 16);
     Serial.printf("label %s PID %s = %d\n", getConfig("name"),getConfig("code"), PID);
     jsonValid = true;
@@ -138,22 +172,29 @@ void wifi(AsyncWebServerRequest *request) {
 CanFrame CANFrame;
 
 // get the 16 bits value at the byte offset
-int16_t getInt16(const uint8_t *charPtr, bool bigEndian) {
-  uint8_t little = *charPtr++;
-  uint8_t big = *charPtr;
-  int16_t result;
-  if (bigEndian) {
-    result = (int16_t)(little << 8) | big;
-  } else {
-    result = (int16_t)(big << 8) | little;
-  }
-  return result;
+int16_t getInt16(const uint8_t *charPtr, bool isLittleEndian) {
+    // We lezen expliciet byte 0 en byte 1
+    uint16_t b0 = charPtr[0];
+    uint16_t b1 = charPtr[1];
+    uint16_t result;
+
+    if (isLittleEndian) {
+        // Little Endian: Byte 0 is de 'Least Significant Byte' (LSB)
+        // Voorbeeld: [0xAA, 0xBB] wordt 0xBBAA
+        result = (b1 << 8) | b0;
+    } else {
+        // Big Endian: Byte 0 is de 'Most Significant Byte' (MSB)
+        // Voorbeeld: [0xAA, 0xBB] wordt 0xAABB
+        result = (b0 << 8) | b1;
+    }
+
+    return (int16_t)result;
 }
 // Find the PID in the data of an OBD2 frame. OBD2 uses a 2-byte PID for Extended CAN frames, but 1 byte for Standard CAN frames
 int16_t getPID(const CanFrame& frame)
 {
   int8_t pidLengthInBytes = frame.extd ? 2 : 1;
-  return (pidLengthInBytes == 1) ? frame.data[2] : getInt16(&frame.data[2], false);
+  return (pidLengthInBytes == 1) ? frame.data[2] : getInt16(&frame.data[2], true);
 }
 
 void CANReader(void *par) {
@@ -171,31 +212,48 @@ void CANReader(void *par) {
   }
 }
 float getCANValue() {
-  digitalWrite(BUILTIN, HIGH);
-  int16_t intVal;
-  int offset = getIntConfig("offset");
-  int16_t nBits = getIntConfig("bits");
-  if (strcmp("byte", getConfig("datatype"))) {
-    intVal = getInt16(&CANFrame.data[offset], strcmp("little", getConfig("endian")));
-    if (nBits < 16 && nBits > 0) {
-      int16_t mask = -1;
-      mask = mask >> (16 - nBits);
-      intVal &= mask;
+    digitalWrite(BUILTIN, HIGH);
+   
+    float finalValue = 0;
+
+    if (currentCfg.isByte) {
+        // --- BYTE LOGICA (Unsigned 8-bit + Min Value) ---
+        uint8_t rawByte = CANFrame.data[currentCfg.offset];
+       
+        if (currentCfg.bits < 8 && currentCfg.bits > 0) {
+            rawByte &= (uint8_t)((1 << currentCfg.bits) - 1);
+        }
+       
+        // Formule: (Raw + Min) * Factor
+        finalValue = (float)(rawByte + currentCfg.minValue) * currentCfg.factor;
+
+    } else {
+        // --- WORD LOGICA (Signed 16-bit) ---
+        // We gaan ervan uit dat getInt16 de endianness correct afhandelt
+        int16_t rawWord = getInt16(&CANFrame.data[currentCfg.offset], currentCfg.isLittleEndian);
+       
+        if (currentCfg.bits < 16 && currentCfg.bits > 0) {
+            uint16_t mask = (uint16_t)((1 << currentCfg.bits) - 1);
+            uint16_t signBit = 1 << (currentCfg.bits - 1);
+            uint16_t maskedValue = (uint16_t)rawWord & mask;
+           
+            // Pas Sign Extension toe als het getal negatief moet zijn
+            if (maskedValue & signBit) {
+                rawWord = (int16_t)(maskedValue - (1 << currentCfg.bits));
+            } else {
+                rawWord = (int16_t)maskedValue;
+            }
+        }
+       
+        finalValue = (float)rawWord * currentCfg.factor;
     }
-  } else {
-    intVal = CANFrame.data[offset];
-    if (nBits < 8 && nBits > 0) {
-      int8_t mask = -1;
-      mask = mask >> (8 - nBits);
-      intVal &= mask;
+
+    if (currentCfg.isInteger) {
+        finalValue = round(finalValue);
     }
-  }
-  float value = intVal * getFloatConfig("factor");
-  if (!strcmp("integer", getConfig("datatype"))) {
-    value = round(value);
-  }
-  digitalWrite(BUILTIN, LOW);
-  return value;
+
+    digitalWrite(BUILTIN, LOW);
+    return finalValue;
 }
 
 void setup() {
@@ -215,6 +273,7 @@ void setup() {
       jsonValid = true;
       Serial.println("deserialization OK");
       PID = std::stoi(getConfig("code"), NULL, 16);
+      initConfig();
       Serial.printf("label %s PID %s = %d\n", getConfig("name"),getConfig("code"), PID);
     }
   }
@@ -266,6 +325,7 @@ void setup() {
     if (!strlen(getConfig("viz_type"))) {
       request->send(200, "text/html", (uint8_t *)configHtml, strlen(configHtml));
     } else {
+      char buf[10];
       String configPage = "/config.html?name=";
       configPage.concat(getConfig("name"));
       configPage.concat("&code=");
@@ -288,6 +348,9 @@ void setup() {
       configPage.concat(getConfig("viz_type"));
       configPage.concat("&bits=");
       configPage.concat(getConfig("bits"));
+      configPage.concat("&ms=");
+      itoa(currentCfg.ms, buf, 10);
+      configPage.concat(buf);
       while(--pars >= 0) {
         const AsyncWebParameter *p = request->getParam(pars);
         Serial.printf("%s = %s\n", p->name().c_str(), p->value().c_str());
@@ -389,6 +452,8 @@ void setup() {
       testingPage.concat(getConfig("max_value"));
       testingPage.concat("&min=");
       testingPage.concat(getConfig("min"));
+      testingPage.concat("&ms=");
+      testingPage.concat(getConfig("ms"));
       Serial.println(testingPage);
       request->redirect(testingPage);
     }

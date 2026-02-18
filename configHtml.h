@@ -79,7 +79,10 @@ const char *configHtml = R"rawliteral(
                 <label id="lbl-factor">Vermenigvuldigings factor</label>
                 <input type="number" id="factor" step="0.0001">
             </div>
-
+            <div class="form-group" style="flex: 1;">
+                <label id="lbl-ms">Update Interval (ms)</label>
+                <input type="number" id="ms" value="500" min="10">
+            </div>
             <div class="form-group" style="flex: 1;">
                 <label id="lbl-type">Visualisatie Type</label>
                 <select id="viz_type">
@@ -105,13 +108,15 @@ const char *configHtml = R"rawliteral(
             offset: "Offset", datatype: "Datatype",
             bits: "Aantal Bits", endian: "Endianness", min: "Minimale Waarde",
             max: "Maximale Waarde", factor: "Factor", type: "Visualisatie", 
+            ms: "Update Interval (ms)",
             save: "Zenden", export: "Exporteer JSON"
         },
         en: {
             title: "Configuration", langBtn: "Nederlands", name: "Name", code: "Code (Hex)", 
             offset: "Offset", datatype: "Data Type",
             bits: "Bit Count", endian: "Endianness", min: "Min Value",
-            max: "Max Value", factor: "Multiplier", type: "Visualization", 
+            max: "Max Value", factor: "Multiplier", type: "Visualization",
+            ms: "Update Interval (ms)",
             save: "Send", export: "Export JSON"
         }
     };
@@ -120,7 +125,7 @@ const char *configHtml = R"rawliteral(
         const urlParams = new URLSearchParams(window.location.search);
         
         // Vul velden op basis van URL (bijv: ?name=Motor&offset=10&datatype=float)
-        const fields = ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type'];
+        const fields = ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type', 'ms'];
         fields.forEach(field => {
             const val = urlParams.get(field);
             if (val !== null) {
@@ -157,7 +162,7 @@ const char *configHtml = R"rawliteral(
     async function postToServer() {
         // Verzamel data voor de POST request
         const config = {};
-        ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type']
+        ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type', 'ms']
         .forEach(id => config[id] = document.getElementById(id).value);
 
         console.log("Verzenden:", config);
@@ -171,7 +176,8 @@ const char *configHtml = R"rawliteral(
             '&max_value=' + parseFloat(document.getElementById('max_value').value) +
             '&min=' + parseFloat(document.getElementById('min').value) +
             '&factor=' + parseFloat(document.getElementById('factor').value) +
-            '&viz_type=' +  document.getElementById('viz_type').value
+            '&viz_type=' +  document.getElementById('viz_type').value +
+            '&ms='+ document.getElementById('ms').value
             ,{
                 method: 'POST',
                 headers: {
@@ -181,12 +187,11 @@ const char *configHtml = R"rawliteral(
             });
 
         alert("Data verzonden! Zie console.");
-        // Hier kun je jouw fetch-logica plaatsen
     }
 
     function exportJSON() {
         const config = {};
-        ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type']
+        ['name', 'code', 'offset', 'datatype', 'bits', 'endian', 'max_value', 'min', 'factor', 'viz_type', 'ms']
         .forEach(id => config[id] = document.getElementById(id).value);
 
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 4));
